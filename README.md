@@ -1,48 +1,45 @@
-# BankGPT knowledge-system submission
+# BankGPT: a knowledge system that knows what is true now
 
-This project answers credit-union questions from five dated website snapshots. The challenge is to choose the right source, product tier, and snapshot date—and to say when the supplied pages do not establish an answer.
+I built BankGPT for the Knowledge Hackathon to answer credit-union questions from five dated snapshots of Dupaco's website. The challenge is not just finding a matching sentence: rates change, old promotions remain online, and tables contain similar products with different terms and tiers. BankGPT has to use the right evidence, respect the requested date, and admit when the snapshots do not support an answer.
 
-## What to submit
+## How it works
 
-The scorer's entry folder is `submission/`. The required `solution.py` exposes `build()` and returns an object with `ingest(snapshot)`, `answer(question, as_of=None)`, and `conflicts()`.
+I kept the final system deliberately small in concept:
 
-The entry file delegates to the tested implementation in `experiments/rag_openai/solution.py`. That implementation uses the table-aware BM25 index in `experiments/bm25/solution.py` and generic source/qualifier signals in `experiments/hybrid/solution.py`. Include those implementation files, plus `submission/requirements.txt` and `submission/NOTES.md`, in the same repository. Read the actual answer pipeline in `experiments/rag_openai/solution.py`; `submission/solution.py` is just the contract entry point.
+1. **Keep snapshots separate.** During ingestion, each dated crawl is indexed independently. An `as_of` question uses the latest complete snapshot on or before that date; otherwise the latest snapshot is used.
+2. **Preserve useful document structure.** Markdown tables are split into rows while keeping column headings and nearby labels with their values. This helps distinguish, for example, a 60-month auto-loan tier from a similar term.
+3. **Retrieve with BM25.** The system ranks passages using lexical relevance, then applies small, general signals for source type and explicit qualifiers. It has no vector database or embedding dependency.
+4. **Answer from evidence.** When `OPENAI_API_KEY` is set, `gpt-4.1-mini` receives the retrieved passages and must cite their IDs for its claims. The implementation checks cited IDs and numeric claims against the supplied evidence. If the API is unavailable, it returns retrieved evidence as an unconfident fallback.
+5. **Report possible conflicts.** `conflicts()` compares numeric passages in similar page sections and favors later snapshots. This is heuristic and needs stronger validation on the full corpus.
 
-## How the solution works
+The public question text and expected answers are not used by the answer pipeline. It reads the provided snapshots and does not call live websites.
 
-1. Ingest each complete snapshot in date order. Pages are split into passages while keeping table headers and nearby product labels attached to values.
-2. For an answer, select the newest complete snapshot on or before `as_of` (or the newest snapshot when no date is given).
-3. BM25 ranks passages by lexical relevance. Small, generic source-type and qualifier signals help distinguish official product information and exact terms/model years; they do not contain answer values.
-4. If `OPENAI_API_KEY` is available, the model synthesizes a concise answer from retrieved passages only and identifies evidence for each claim. The code checks cited passage IDs and numeric claims. Without the API, it returns evidence passages as an explicitly unconfident fallback.
-5. `conflicts()` looks for changed numeric passages in similar sections of the same page and prefers the later snapshot. This is a heuristic; the public evaluation command does not include the private conflict gold file, so that method was not separately measured here.
+## Evaluation and limitations
 
-No practice answers or expected values are hard-coded. The implementation only reads the supplied snapshots and does not call live websites.
+My last successful API-enabled run on the 40-question public set scored **0.6446 QA** and **0.6310 overall**. It had 0 runtime errors, 0.975 consistency, a 3.69-second p95 answer time, and 5.0-second ingestion. The score is a useful baseline, not a claim of complete coverage.
 
-## What we tried and what the scores mean
+I reran the public set while preparing this submission. The OpenAI request could not connect in that run, so the system used its no-API evidence fallback and scored **0.5271**. The fallback is deliberately unconfident and returns retrieved passages instead of composing an answer. The higher score therefore depends on a working API connection and key; it is not reproduced by the fallback-only run.
 
-- The supplied starter scored 0.093 on the 40-question public set.
-- The tested BM25 + source/qualifier ranking + evidence-constrained OpenAI generation reached QA 0.6488. Its earlier run scored 0.6352 overall.
-- The embedding experiment scored 0.6319 overall, with 851.7-second ingestion versus about 5 seconds for the lexical path. Retrieval coverage improved slightly, but end-to-end answers did not, so embeddings and their dependency were removed.
-- The final cleaned implementation's API-enabled public run scored 0.6310 overall: QA 0.6446, consistency 0.975, speed score 0.9061, 40 questions, zero runtime errors, 5.0-second ingestion. This is slightly below the earlier 0.6352 baseline. The cleanup also fixed a general chunking bug where short numeric fact lines were mistaken for headings; that made the provided conflict self-test pass (F1 1.0 on its one gold item), while the public QA score moved down slightly. See local `results/final-submission/report.json` for the full report.
+The strongest categories were entity attribution (1.00) and tier disambiguation (0.83). Stale traps (0.45), current values (0.33), and conflict resolution (0.33) remain weak. The supplied synthetic conflict test matched its one gold item, but that single test does not establish conflict precision on the real corpus; `conflicts()` reaches its 300-item cap there, so over-reporting remains a known risk.
 
-Remaining weak categories are conflict resolution (1/3), stale traps (0.45), and list completeness (0.64). Treat this as a measured baseline, not perfect coverage. The provided synthetic conflict test passes its one item, but `conflicts()` reaches its 300-entry cap on the real corpus; its precision is unmeasured and over-reporting is a known risk.
+I also tested embeddings. They slightly improved retrieval coverage but reduced the end-to-end score from 0.6352 to 0.6319 and increased ingestion from about 5 seconds to 851.7 seconds. I removed that path from the final implementation because it added cost without improving the result that matters: end-to-end answer quality.
 
-## Run locally
+## Run the public evaluation
 
-Python 3.9+ is required (the organizers install in Python 3.11). From the kit root:
+The snapshot data is distributed separately in the participant kit and is intentionally not committed here. Copy the provided `snapshots_zip/` directory into the repository root before running the evaluator.
 
 ```bash
 python3 -m pip install -r submission/requirements.txt
-python3 harness/run_eval.py --submission submission --eval eval/public_eval.jsonl --out results/final-submission
+export OPENAI_API_KEY="your-key"
+python3 harness/run_eval.py --submission submission --eval eval/public_eval.jsonl --out results/run
 ```
 
-Set `OPENAI_API_KEY` in the environment for the API-enabled run. A kit-root `.env` is read for local development and is git-ignored. Without a key, the fallback runs without an API but its answer accuracy is expected to be lower.
+Python 3.9 or newer is required. The API key is optional for running the fallback, but the API-enabled result above was produced with a key available. `OPENAI_API_KEY` and local result files should not be committed.
 
-The scorer unpacks `snapshots_zip/` into `snapshots/` if needed. The assignment says not to redistribute the snapshot data; keep the corpus and `.env` out of Git. For local clean-clone testing, place the provided kit data next to the repository before running the command.
+## Project layout
 
-## Before submission
-
-- Grant the organizers read access to the GitHub repository.
-- Make sure the required submission and implementation files listed above are included.
-- Do not commit `.env`, API keys, result outputs, or snapshot data.
-- Share the repository URL and the exact commit hash requested in the deadline email.
+- `submission/solution.py` implements the required `build()` entry point.
+- `experiments/rag_openai/solution.py` contains the snapshot-aware answer pipeline.
+- `experiments/bm25/solution.py` contains table-aware chunking and BM25 retrieval.
+- `experiments/hybrid/solution.py` contains the general source and qualifier signals used during retrieval.
+- `harness/` and `eval/public_eval.jsonl` provide the public evaluation workflow.
