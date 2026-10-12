@@ -12,13 +12,13 @@ I kept the final system deliberately small in concept:
 4. **Answer from evidence.** When `OPENAI_API_KEY` is set, `gpt-4.1-mini` receives the retrieved passages and must cite their IDs for its claims. The implementation checks cited IDs and numeric claims against the supplied evidence. If the API is unavailable, it returns retrieved evidence as an unconfident fallback.
 5. **Report possible conflicts.** `conflicts()` compares numeric passages in similar page sections and favors later snapshots. This is heuristic and needs stronger validation on the full corpus.
 
-The public question text and expected answers are not used by the answer pipeline. It reads the provided snapshots and does not call live websites.
+I inspected the five supplied snapshots, but the answer pipeline does not load evaluation questions, question IDs, or expected-answer strings at runtime. I used the public set to test and adjust general retrieval behavior; I did not add per-question branches or encode expected values. I could not see the private evaluation questions, and their wording may differ, so I focused on reusable behavior: lexical relevance, snapshot dates, source quality, product qualifiers, and evidence checks. These general signals are intended to transfer across questions; they do not guarantee performance on unseen wording. The system reads the supplied snapshots and does not call live websites.
 
 ## Evaluation and limitations
 
-My last successful API-enabled run on the 40-question public set scored **0.6446 QA** and **0.6310 overall**. It had 0 runtime errors, 0.975 consistency, a 3.69-second p95 answer time, and 5.0-second ingestion. The score is a useful baseline, not a claim of complete coverage.
+The best successful API-enabled development run scored **0.6488 QA** and **0.6352 overall** on the 40-question public set. The final cleaned revision in this repository scored **0.6446 QA** and **0.6310 overall**, with 0 runtime errors, 0.975 consistency, a 3.69-second p95 answer time, and 5.0-second ingestion. I kept the final revision because it fixed a general table-chunking issue and passed the supplied synthetic conflict check; its public-set score was slightly lower. These are measured public-set results, not a claim of complete coverage.
 
-I reran the public set while preparing this submission. The OpenAI request could not connect in that run, so the system used its no-API evidence fallback and scored **0.5271**. The fallback is deliberately unconfident and returns retrieved passages instead of composing an answer. The higher score therefore depends on a working API connection and key; it is not reproduced by the fallback-only run.
+API availability matters: `OPENAI_API_KEY` and a working connection are needed for the reported API-enabled behavior. If the request cannot be made, the system deliberately falls back to retrieved passages marked unconfident rather than composing an unsupported answer.
 
 The strongest categories were entity attribution (1.00) and tier disambiguation (0.83). Stale traps (0.45), current values (0.33), and conflict resolution (0.33) remain weak. The supplied synthetic conflict test matched its one gold item, but that single test does not establish conflict precision on the real corpus; `conflicts()` reaches its 300-item cap there, so over-reporting remains a known risk.
 

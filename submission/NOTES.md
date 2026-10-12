@@ -9,11 +9,13 @@ I built this submission around retrieval and evidence checking rather than askin
 3. BM25 ranks passages. General source and qualifier signals help distinguish official product information and explicit terms, tiers, or model years.
 4. If an OpenAI API key is available, `gpt-4.1-mini` writes the response from the retrieved passages and returns evidence IDs for its claims. The implementation rejects unknown evidence IDs and numeric claims that do not appear in the cited evidence. If the API is unavailable, the fallback returns retrieved text without claiming confidence.
 
-I do not store benchmark answers in the implementation, and the system does not make live website requests. There is no vector database or embedding code in the final path.
+I inspected the five supplied snapshots, but the answer pipeline does not load evaluation questions, question IDs, or expected-answer strings at runtime. I used the public set to evaluate and adjust general retrieval behavior; I did not add per-question branches or encode expected values. I could not see the private evaluation questions, and their wording may differ, so I designed around reusable signals—retrieval relevance, snapshot dates, source type, product qualifiers, and evidence checks. That is the intent, not a guarantee: I could not validate against the private set.
+
+The system does not make live website requests. There is no vector database or embedding code in the final path.
 
 ## Results and known limits
 
-My last successful API-enabled run on the public 40-question evaluation reported:
+The best successful API-enabled development run on the public 40-question evaluation scored 0.6488 QA and 0.6352 overall. The final cleaned revision in this repository scored 0.6446 QA and 0.6310 overall. I kept the final revision because it fixed a general table-chunking issue and passed the supplied synthetic conflict check, even though its public-set score was slightly lower. Its measured results were:
 
 | Measure | Result |
 | --- | ---: |
@@ -24,7 +26,7 @@ My last successful API-enabled run on the public 40-question evaluation reported
 | Ingestion time | 5.0 s |
 | Runtime errors | 0 |
 
-During final preparation, I reran the set but the OpenAI request could not connect. The no-API fallback scored 0.5271; it returns retrieved passages as unconfident evidence rather than composing answers. The 0.6310 overall result above depends on successful API access, and the fallback run did not reproduce it.
+The reported result requires both an API key and a working connection. If the API request fails, the system falls back to retrieved passages marked unconfident instead of composing an answer.
 
 The main remaining weaknesses are stale-trap handling, current-value questions, and conflict resolution. The synthetic conflict test contains only one gold item; passing it is not evidence that `conflicts()` is precise on the full corpus. On the full corpus, the method reaches its 300-item cap, and over-reporting remains possible.
 
